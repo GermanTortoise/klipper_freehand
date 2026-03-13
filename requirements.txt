@@ -1,0 +1,4 @@
+numpy==2.4.3
+packaging==26.0
+pygame==2.6.1
+vector==1.8.0
