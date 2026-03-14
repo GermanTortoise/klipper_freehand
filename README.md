@@ -6,5 +6,5 @@ This is a Klipper plugin that allows you to control a Klipper 3D printer using y
 
 Run:
 ```shell
-git clone https://github.com/GermanTortoise/klipper_freehand.git && install.sh
+git clone https://github.com/GermanTortoise/klipper_freehand.git && bash ./klipper_freehand/install.sh
 ```
