@@ -91,7 +91,7 @@ class KeyboardControl:
     def _distance(self, x1: float, y1: float, x2: float, y2: float) -> float:
         return ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5
     
-    def _move(self, keys: str) -> G1:
+    def _lateral_move(self, keys: str) -> G1:
         v = vector.obj(x=0, y=0)
         for char in keys:
             match char:
@@ -111,6 +111,10 @@ class KeyboardControl:
         # slic3r extrusion formula (___) shaped
         e_length = v.rho * (math.pi * (self.layer_height / 2) ** 2 + (self.line_width - self.layer_height) * self.layer_height)
         return G1(self.x, self.y, None, e_length)
+    
+    def _vertical_move(self) -> G1:
+        self.z += self.layer_height
+        return G1(self.x, self.y, self.z, None)
         
     def cmd_ETCH_START(self, gcmd):
         mock = gcmd.get_int('MOCK', 0)
@@ -136,7 +140,7 @@ class KeyboardControl:
         
         frame_count = 0
         # TODO: refactor this less stupidly
-        test_keys = ['w', 'w', 'w', 'w', 'w', 'a', 'a', 'a', 'a', 'a', 's', 's', 's', 's', 's', 'd', 'd', 'd', 'd', 'd']
+        test_keys = ['w', 'w', 'w', 'w', 'w', 'a', 'a', 'a', 'a', 'a', 's', 's', 's', 's', 's', 'd', 'd', 'd', 'd', 'd', 'q']
         max_frames = len(test_keys) if mock_input else math.inf
         
         while self.running and frame_count < max_frames:
@@ -148,11 +152,13 @@ class KeyboardControl:
                     self.running = False
             
             # Use test keys if provided, otherwise read from keyboard
-            if test_keys:
+            if mock:
                 keys_pressed = test_keys[frame_count] if frame_count < len(test_keys) else ""
             else:
                 keys = pygame.key.get_pressed()
                 keys_pressed = ""
+                if keys[pygame.K_q]:
+                    keys_pressed += 'q'
                 if keys[pygame.K_w]:
                     keys_pressed += 'w'
                 if keys[pygame.K_a]:
@@ -161,12 +167,23 @@ class KeyboardControl:
                     keys_pressed += 's'
                 if keys[pygame.K_d]:
                     keys_pressed += 'd'
+                if keys[pygame.K_SPACE]:
+                    keys_pressed += ' '
+                    
+            if 'q' in keys_pressed:
+                break
             
-            move = self._move(keys_pressed)
-            if move.e > 0:
-                gcode_move = self._G1_gcode(move)
-                # print(gcode_move)
-                self.gcode.run_script_from_command(gcode_move)
+            if ' ' in keys_pressed:
+                vert_move = self._vertical_move()
+                keys_pressed.replace(' ', '')
+            else:
+                vert_move = None
+            lat_move = self._lateral_move(keys_pressed)
+            
+            if vert_move is not None:
+                self.gcode.run_script_from_command(self._G1_gcode(vert_move))
+            if lat_move.e and lat_move.e > 0:
+                self.gcode.run_script_from_command(self._G1_gcode(lat_move))
             
             frame_count += 1
         
@@ -216,8 +233,22 @@ class MockPrinter:
 class MockGcode:
     def register_command(self, command: str, callback, desc: str = ''):
         pass
+    def run_script_from_command(self, command: str):
+        print(command)
+    
+class MockGcmd:
+    def __init__(self):
+        self.responses = []
+    
+    def get_int(self, key: str, default: int = 0) -> int:
+        """Get an integer parameter, return default if not provided"""
+        return default
+    
+    def respond_info(self, message: str) -> None:
+        """Log an info response"""
+        self.responses.append(message)
+        print(f"gcmd message: {message}")
     
 if __name__ == "__main__":
-    e = load_config(MockConfig()) 
-    e.cmd_ETCH_START()
-    
+    e = load_config(MockConfig())
+    e.cmd_ETCH_START(MockGcmd())
