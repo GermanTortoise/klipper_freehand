@@ -143,6 +143,8 @@ class KeyboardControl:
         test_keys = ['w', 'w', 'w', 'w', 'w', 'a', 'a', 'a', 'a', 'a', 's', 's', 's', 's', 's', 'd', 'd', 'd', 'd', 'd', 'q']
         max_frames = len(test_keys) if mock_input else math.inf
         
+        space_pressed_last_frame = False
+        
         while self.running and frame_count < max_frames:
             self.clock.tick(self.framerate)
             
@@ -157,6 +159,13 @@ class KeyboardControl:
             else:
                 keys = pygame.key.get_pressed()
                 keys_pressed = ""
+                
+                # Check space for transition (press, not hold)
+                space_pressed_now = keys[pygame.K_SPACE]
+                if space_pressed_now and not space_pressed_last_frame:
+                    keys_pressed += ' '
+                space_pressed_last_frame = space_pressed_now
+                
                 if keys[pygame.K_q]:
                     keys_pressed += 'q'
                 if keys[pygame.K_w]:
@@ -167,8 +176,6 @@ class KeyboardControl:
                     keys_pressed += 's'
                 if keys[pygame.K_d]:
                     keys_pressed += 'd'
-                if keys[pygame.K_SPACE]:
-                    keys_pressed += ' '
                     
             if 'q' in keys_pressed:
                 break
