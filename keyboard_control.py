@@ -33,10 +33,10 @@ M73 P0 R6
 G90 ; use absolute coordinates
 M83 ; extruder relative mode
 M204 S5000 T5000
-M104 S230 ; set extruder temp
-M140 S50 ; set bed temp
+;M104 S230 ; set extruder temp
+;M140 S50 ; set bed temp
 G28 ; home all
-M190 S50 ; wait for bed temp
+;M190 S50 ; wait for bed temp
 G1 Z1.24
 """
 
@@ -106,8 +106,8 @@ class KeyboardControl:
             out += f" Y{move.y:.3f}"
         if move.z is not None:
             out += f" Z{move.z:.3f}"
-        if move.e is not None:
-            out += f" E{move.e:.5f}"
+        # if move.e is not None:
+        #     out += f" E{move.e:.5f}"
         return out
 
     def _distance(self, x1: float, y1: float, x2: float, y2: float) -> float:
