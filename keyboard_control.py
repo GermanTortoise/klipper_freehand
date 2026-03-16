@@ -248,8 +248,9 @@ class KeyboardControl:
     def cmd_ETCH_STOP(self, gcmd):
         gcmd.respond_info("Stop etching")
         if self.running:
-            self.gcode.run_script_from_command(startup_gcode)
+            self.gcode.run_script_from_command(shutdown_gcode)
             self.running = False
+            self._cleanup_etch()
             self.reactor.update_timer(self.etch_timer, self.reactor.NOW)
             
 def load_config(config):
