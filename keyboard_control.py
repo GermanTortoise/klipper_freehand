@@ -26,7 +26,7 @@ on new layer, can only extrude when on top of prev by at least a certain overhan
 """
 
 # copied from a gcode file
-startup_command = """
+startup_gcode = """
 ; EXECUTABLE_BLOCK_START
 M73 P0 R6
 ;TYPE:Custom
@@ -39,6 +39,16 @@ G28 ; home all
 M190 S50 ; wait for bed temp
 G1 Z1.24
 """
+
+shutdown_gcode = """
+G10 ; retract
+M106 ; fan off
+M104 S0 ; extruder heater off
+M140 S0 ; bed heater off
+M107
+M84 ; turn off motors
+"""
+
 
 class G1(NamedTuple):
     x: float | None
@@ -217,7 +227,7 @@ class KeyboardControl:
         pygame.display.set_caption("Keyboard Control")
         gcmd.respond_info("Finished pygame init")
 
-        self.gcode.run_script_from_command(startup_command)
+        self.gcode.run_script_from_command(startup_gcode)
         center = self._G1_gcode(G1(self.x, self.y, None, None))
         down = self._G1_gcode(G1(None, None, self.z, None))
         self.gcode.run_script_from_command(center)
@@ -238,6 +248,7 @@ class KeyboardControl:
     def cmd_ETCH_STOP(self, gcmd):
         gcmd.respond_info("Stop etching")
         if self.running:
+            self.gcode.run_script_from_command(startup_gcode)
             self.running = False
             self.reactor.update_timer(self.etch_timer, self.reactor.NOW)
             
