@@ -41,7 +41,7 @@ G1 Z1.24
 """
 
 shutdown_gcode = """
-G10 ; retract
+;G10 ; retract
 M106 ; fan off
 M104 S0 ; extruder heater off
 M140 S0 ; bed heater off
@@ -83,9 +83,9 @@ class KeyboardControl:
         self.frame_count = 0
         self.max_frames = math.inf
         self.test_keys = []
-        self.etch_timer = self.reactor.register_timer(
-            self._etch_step, self.reactor.NEVER)
-
+        self.etch_timer = None
+        
+        self.printer.register_event_handler("klippy:ready", self._handle_ready)
         self.gcode.register_command('ETCH_START', self.cmd_ETCH_START,
                                     desc='start etching, MOCK=1 for mock input')
         self.gcode.register_command('ETCH_STOP', self.cmd_ETCH_STOP,
@@ -172,6 +172,9 @@ class KeyboardControl:
         if keys[pygame.K_SPACE]:
             keys_pressed += ' '
         return keys_pressed
+    
+    def _handle_ready(self):
+        self.etch_timer = self.reactor.register_timer(self._etch_step, self.reactor.NEVER)
 
     def _etch_step(self, eventtime):
         if not self.running:
@@ -221,18 +224,19 @@ class KeyboardControl:
         else:
             gcmd.respond_info("Started etching!")
 
-        pygame.init()
-        self.clock = pygame.time.Clock()
-        self.screen = pygame.display.set_mode((100, 100))
-        pygame.display.set_caption("Keyboard Control")
-        gcmd.respond_info("Finished pygame init")
-
         self.gcode.run_script_from_command(startup_gcode)
         center = self._G1_gcode(G1(self.x, self.y, None, None))
         down = self._G1_gcode(G1(None, None, self.z, None))
         self.gcode.run_script_from_command(center)
         self.gcode.run_script_from_command(down)
 
+        gcmd.respond_info("Starting pygame init")
+        pygame.init()
+        self.clock = pygame.time.Clock()
+        self.screen = pygame.display.set_mode((100, 100))
+        pygame.display.set_caption("Keyboard Control")
+        gcmd.respond_info("Finished pygame init")
+        
         # TODO: refactor this less stupidly
         self.test_keys = [
             'w', 'w', 'w', 'w', 'w',
@@ -243,7 +247,8 @@ class KeyboardControl:
         self.frame_count = 0
         self.max_frames = len(self.test_keys) if self.mock_input else math.inf
         self.running = True
-        self.reactor.update_timer(self.etch_timer, self.reactor.NOW)
+        if self.etch_timer is not None:
+            self.reactor.update_timer(self.etch_timer, self.reactor.NOW)
 
     def cmd_ETCH_STOP(self, gcmd):
         gcmd.respond_info("Stop etching")
@@ -251,7 +256,8 @@ class KeyboardControl:
             self.gcode.run_script_from_command(shutdown_gcode)
             self.running = False
             self._cleanup_etch()
-            self.reactor.update_timer(self.etch_timer, self.reactor.NOW)
+            if self.etch_timer is not None:
+                self.reactor.update_timer(self.etch_timer, self.reactor.NOW)
             
 def load_config(config):
     return KeyboardControl(config)
