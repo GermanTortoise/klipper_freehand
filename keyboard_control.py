@@ -82,6 +82,7 @@ class KeyboardControl:
         self.max_frames = math.inf
         self.test_keys = []
         self.etch_timer = None
+        self.space_pressed = False
         
         self.printer.register_event_handler("klippy:ready", self._handle_ready)
         self.gcode.register_command('ETCH_START', self.cmd_ETCH_START,
@@ -125,7 +126,7 @@ class KeyboardControl:
                     v.x += 1
 
         if v.rho == 0:
-            return G1(self.x, self.y, None, 0.0)
+            return G1(self.x, self.y, None, None)
 
         v = v.unit()
         v *= (self.speed / self.framerate)
@@ -202,9 +203,13 @@ class KeyboardControl:
             return self._end_etching()
 
         if ' ' in keys_pressed:
-            vert_move = self._vertical_move()
-            keys_pressed = keys_pressed.replace(' ', '')
-            self.gcode.run_script_from_command(self._G1_gcode(vert_move))
+            if not self.space_pressed:
+                self.space_pressed = True
+                vert_move = self._vertical_move()
+                keys_pressed = keys_pressed.replace(' ', '')
+                self.gcode.run_script_from_command(self._G1_gcode(vert_move))
+        else:
+            self.space_pressed = False
 
         lat_move = self._lateral_move(keys_pressed)
         if lat_move.e is not None and lat_move.e > 0:
