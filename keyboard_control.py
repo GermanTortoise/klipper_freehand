@@ -27,25 +27,22 @@ on new layer, can only extrude when on top of prev by at least a certain overhan
 
 # copied from a gcode file
 startup_gcode = """
-; EXECUTABLE_BLOCK_START
-M73 P0 R6
-;TYPE:Custom
-G90 ; use absolute coordinates
+G90 ; toolhead absolute coordinates
 M83 ; extruder relative mode
-M204 S5000 T5000
+M204 S5000 T5000 ; set acceleration
 ;M104 S230 ; set extruder temp
 ;M140 S50 ; set bed temp
 G28 ; home all
 ;M190 S50 ; wait for bed temp
+;M109 s230 ; wait for extruder temp
 G1 Z1.24
 """
 
 shutdown_gcode = """
-;G10 ; retract
-M106 ; fan off
+;G1 E-1.0 F2100 ; retract
 M104 S0 ; extruder heater off
 M140 S0 ; bed heater off
-M107
+M107 ; fan off
 M84 ; turn off motors
 """
 
