@@ -2,6 +2,7 @@ import pygame
 from typing import NamedTuple
 import vector
 import math
+import time
 
 """
 [keyboard_control]
@@ -172,30 +173,33 @@ class KeyboardControl:
     
     def _handle_ready(self):
         self.etch_timer = self.reactor.register_timer(self._etch_step, self.reactor.NEVER)
+        
+    def _end_etching(self):
+        self._cleanup_etch()
+        self.gcode.respond_info("Finished etching")
+        return self.reactor.NEVER
 
     def _etch_step(self, eventtime):
         if not self.running:
-            self._cleanup_etch()
-            self.gcode.respond_info("Finished etching")
-            return self.reactor.NEVER
+            # stopped by ETCH_STOP at previous frame
+            return self._end_etching()
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
+                # stopped by closing Pygame window
                 self.running = False
-                break
+                return self._end_etching()
 
-        if not self.running or self.frame_count >= self.max_frames:
+        if self.frame_count >= self.max_frames:
+            # stopped by mock finishing
             self.running = False
-            self._cleanup_etch()
-            self.gcode.respond_info("Finished etching")
-            return self.reactor.NEVER
+            return self._end_etching()
 
         keys_pressed = self._read_keys()
         if 'q' in keys_pressed:
+            # stopped by pressing q
             self.running = False
-            self._cleanup_etch()
-            self.gcode.respond_info("Finished etching")
-            return self.reactor.NEVER
+            return self._end_etching()
 
         if ' ' in keys_pressed:
             vert_move = self._vertical_move()
@@ -268,8 +272,20 @@ class MockReactor:
         return callback
 
     def update_timer(self, timer_handler, waketime):
-        if timer_handler is not None and waketime == self.NOW:
-            timer_handler(waketime)
+        if timer_handler is None or waketime != self.NOW:
+            return
+
+        next_waketime = time.monotonic()
+
+        while True:
+            now = time.monotonic()
+            if next_waketime > now:
+                time.sleep(min(next_waketime - now, 0.01))
+                continue
+
+            next_waketime = timer_handler(now)
+            if next_waketime == self.NEVER:
+                break
 
 
 class MockConfig:
@@ -298,11 +314,22 @@ class MockConfig:
         return MockPrinter()
 
 class MockPrinter:
+    def __init__(self):
+        self._gcode = MockGcode()
+        self._reactor = MockReactor()
+        self._event_handlers = {}
+
     def lookup_object(self, name: str):
-        return MockGcode()
+        return self._gcode
 
     def get_reactor(self):
-        return MockReactor()
+        return self._reactor
+
+    def register_event_handler(self, event: str, callback):
+        self._event_handlers.setdefault(event, []).append(callback)
+        # Mimic Klipper boot sequence for tests: fire ready immediately.
+        if event == "klippy:ready":
+            callback()
 
 class MockGcode:
     def register_command(self, command: str, callback, desc: str = ''):
@@ -315,18 +342,17 @@ class MockGcode:
         print(f"gcode message: {message}")
     
 class MockGcmd:
-    def __init__(self):
+    def __init__(self, params=None):
         self.responses = []
-    
+        self.params = params or {}
+
     def get_int(self, key: str, default: int = 0) -> int:
-        """Get an integer parameter, return default if not provided"""
-        return default
-    
+        return int(self.params.get(key, default))
+
     def respond_info(self, message: str) -> None:
-        """Log an info response"""
         self.responses.append(message)
         print(f"gcmd message: {message}")
     
 if __name__ == "__main__":
     e = load_config(MockConfig())
-    e.cmd_ETCH_START(MockGcmd())
+    e.cmd_ETCH_START(MockGcmd({"MOCK": 0}))
