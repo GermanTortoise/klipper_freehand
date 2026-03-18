@@ -3,6 +3,8 @@ from typing import NamedTuple
 import vector
 import math
 import time
+import os
+import socket
 
 """
 [keyboard_control]
@@ -206,7 +208,7 @@ class KeyboardControl:
             if not self.space_pressed:
                 self.space_pressed = True
                 vert_move = self._vertical_move()
-                keys_pressed = keys_pressed.replace(' ', '')
+                # keys_pressed = keys_pressed.replace(' ', '')
                 self.gcode.run_script_from_command(self._G1_gcode(vert_move))
         else:
             self.space_pressed = False
@@ -237,10 +239,18 @@ class KeyboardControl:
         self.gcode.run_script_from_command(down)
 
         gcmd.respond_info("Starting pygame init")
+        # gcmd.respond_info(f"Host={socket.gethostname()} PID={os.getpid()}")
+        # gcmd.respond_info(f"SSH_CONNECTION={os.environ.get('SSH_CONNECTION')}")
+        gcmd.respond_info(f"DISPLAY={os.environ.get('DISPLAY')}")
+        gcmd.respond_info(f"WAYLAND_DISPLAY={os.environ.get('WAYLAND_DISPLAY')}")
+        gcmd.respond_info(f"XDG_RUNTIME_DIR={os.environ.get('XDG_RUNTIME_DIR')}")
+        gcmd.respond_info(f"SDL_VIDEODRIVER env={os.environ.get('SDL_VIDEODRIVER')}")
         pygame.init()
         self.clock = pygame.time.Clock()
-        self.screen = pygame.display.set_mode((100, 100))
+        self.screen = pygame.display.set_mode((500, 500))
         pygame.display.set_caption("Keyboard Control")
+        gcmd.respond_info(f"pygame display driver={pygame.display.get_driver()}")
+        gcmd.respond_info(f"wm_info={pygame.display.get_wm_info()}")
         gcmd.respond_info("Finished pygame init")
         
         # TODO: refactor this less stupidly

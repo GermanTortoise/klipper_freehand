@@ -41,5 +41,5 @@ preflight_checks
 check_klipper
 link_extension
 install_dependencies
-restart_klipper
+# restart_klipper
 echo "Installation complete!"
