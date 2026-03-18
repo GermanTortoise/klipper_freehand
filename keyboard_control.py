@@ -2,9 +2,7 @@ import pygame
 from typing import NamedTuple
 import vector
 import math
-import time
 import os
-import socket
 
 """
 [keyboard_control]
@@ -87,6 +85,12 @@ class KeyboardControl:
         self.space_pressed = False
         
         self.printer.register_event_handler("klippy:ready", self._handle_ready)
+        self.printer.register_event_handler("klippy:shutdown",
+                            self._handle_klippy_shutdown)
+        self.printer.register_event_handler("klippy:disconnect",
+                            self._handle_klippy_disconnect)
+        self.printer.register_event_handler("gcode:request_restart",
+                            self._handle_request_restart)
         self.gcode.register_command('ETCH_START', self.cmd_ETCH_START,
                                     desc='start etching, MOCK=1 for mock input')
         self.gcode.register_command('ETCH_STOP', self.cmd_ETCH_STOP,
@@ -146,11 +150,19 @@ class KeyboardControl:
         self.z += self.layer_height
         return G1(self.x, self.y, self.z, None)
 
-    def _cleanup_etch(self):
+    def _stop_etch(self):
+        self.running = False
         if self.screen is not None:
+            try:
+                pygame.display.quit()
+            except Exception:
+                pass
+        try:
             pygame.quit()
-            self.screen = None
-            self.clock = None
+        except Exception:
+            pass
+        self.screen = None
+        self.clock = None
 
     def _read_keys(self) -> str:
         if self.mock_input:
@@ -176,33 +188,40 @@ class KeyboardControl:
     
     def _handle_ready(self):
         self.etch_timer = self.reactor.register_timer(self._etch_step, self.reactor.NEVER)
-        
-    def _end_etching(self):
-        self._cleanup_etch()
-        self.gcode.respond_info("Finished etching")
-        return self.reactor.NEVER
 
+    def _handle_request_restart(self, _print_time):
+        if self.running:
+            self.gcode.run_script_from_command(shutdown_gcode)
+        self._stop_etch()
+
+    def _handle_klippy_shutdown(self):
+        self._stop_etch()
+
+    def _handle_klippy_disconnect(self):
+        self._stop_etch()
+        
     def _etch_step(self, eventtime):
         if not self.running:
             # stopped by ETCH_STOP at previous frame
-            return self._end_etching()
+            self._stop_etch()
+            return self.reactor.NEVER
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 # stopped by closing Pygame window
-                self.running = False
-                return self._end_etching()
+                self._stop_etch()
+                return self.reactor.NEVER
 
         if self.frame_count >= self.max_frames:
             # stopped by mock finishing
-            self.running = False
-            return self._end_etching()
+            self._stop_etch()
+            return self.reactor.NEVER
 
         keys_pressed = self._read_keys()
         if 'q' in keys_pressed:
             # stopped by pressing q
-            self.running = False
-            return self._end_etching()
+            self._stop_etch()
+            return self.reactor.NEVER
 
         if ' ' in keys_pressed:
             if not self.space_pressed:
@@ -268,12 +287,11 @@ class KeyboardControl:
 
     def cmd_ETCH_STOP(self, gcmd):
         gcmd.respond_info("Stop etching")
+        if self.etch_timer is not None:
+            self.reactor.update_timer(self.etch_timer, self.reactor.NOW)
+        self._stop_etch()
         if self.running:
             self.gcode.run_script_from_command(shutdown_gcode)
-            self.running = False
-            self._cleanup_etch()
-            if self.etch_timer is not None:
-                self.reactor.update_timer(self.etch_timer, self.reactor.NOW)
             
 def load_config(config):
     return KeyboardControl(config)
