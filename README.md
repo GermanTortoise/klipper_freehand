@@ -28,15 +28,10 @@ This is a Klipper plugin that allows you to control a Klipper 3D printer using y
 
 ## Running
 
-1. **Stop the Klipper service** so it's not competing for the same hardware:
-   ```bash
-   sudo systemctl stop klipper
-   ```
+1. **Run the start script** from the machine that is running Klipper:
+    ```shell
+    bash ./klipper_freehand/start.sh
+    ```
 
-2. **Activate the virtualenv and run Klipper:**
-   ```bash
-   source ~/klippy-env/bin/activate
-   python ~/klipper/klippy/klippy.py ~/printer_data/config/printer.cfg -l /tmp/klippy.log -a ~/printer_data/comms/klippy.sock
-   ```
 
 A Pygame window should appear. Use `wasd` to control x-y movement, `space` to increment a layer, and `q` to quit (or simply close the Pygame window).
