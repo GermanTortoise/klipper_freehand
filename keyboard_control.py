@@ -88,6 +88,7 @@ class KeyboardControl:
         self.space_pressed = False
         
         self.printer.register_event_handler("klippy:ready", self._handle_ready)
+        self.printer.register_event_handler("klippy:connect", self.handle_connect)
         self.printer.register_event_handler("klippy:shutdown",
                             self._handle_klippy_shutdown)
         self.printer.register_event_handler("klippy:disconnect",
@@ -98,6 +99,9 @@ class KeyboardControl:
                                     desc='start etching, MOCK=1 for mock input')
         self.gcode.register_command('ETCH_STOP', self.cmd_ETCH_STOP,
                                     desc='stop etching, can also stop by closing the window')
+        
+    def handle_connect(self):
+        self.toolhead = self.printer.lookup_object('toolhead')
 
     def _increment_bounded(self, val: float, move: float, min: float, max: float) -> float:
         if val + move < min:
