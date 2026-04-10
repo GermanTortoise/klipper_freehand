@@ -2,11 +2,11 @@ import pygame
 from typing import NamedTuple
 import vector
 import math
-import os
 
 """
 [keyboard_control]
 framerate: 60
+max_queue_time: 0.05
 layer_height: 0.2
 line_width: 0.6
 x_min: 10
@@ -58,9 +58,11 @@ class KeyboardControl:
     def __init__(self, config):
         self.printer = config.get_printer()
         self.gcode = self.printer.lookup_object('gcode')
+        self.toolhead = self.printer.lookup_object('toolhead')
+        self.mcu = self.printer.lookup_object('mcu')
         self.reactor = self.printer.get_reactor()
         self.framerate = config.getint('framerate')
-        self.lookahead = config.getfloat('lookahead', 0.10)
+        self.max_queue_time = config.getfloat('max_queue_time', 0.05, above=0.)
         self.layer_height = config.getfloat('layer_height')
         self.line_width = config.getfloat('line_width')
         self.x_min = config.getfloat('x_min')
@@ -84,8 +86,6 @@ class KeyboardControl:
         self.test_keys = []
         self.etch_timer = None
         self.space_pressed = False
-        self.queue_time = 0.0
-        self.last_eventtime = None
         
         self.printer.register_event_handler("klippy:ready", self._handle_ready)
         self.printer.register_event_handler("klippy:shutdown",
@@ -121,7 +121,9 @@ class KeyboardControl:
     def _distance(self, x1: float, y1: float, x2: float, y2: float) -> float:
         return ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5
 
-    def _lateral_move(self, keys: str, segment_time: float) -> G1:
+    def _lateral_move(self, keys: str) -> G1:
+        prev_x = self.x
+        prev_y = self.y
         v = vector.obj(x=0, y=0)
         for char in keys:
             match char:
@@ -138,17 +140,15 @@ class KeyboardControl:
             return G1(self.x, self.y, None, None)
 
         v = v.unit()
-        v *= (self.speed * segment_time)
-        prev_x = self.x
-        prev_y = self.y
+        v *= (self.speed / self.framerate)
         self.x = self._increment_bounded(self.x, v.x, self.x_min, self.x_max)
         self.y = self._increment_bounded(self.y, v.y, self.y_min, self.y_max)
-        moved_dist = self._distance(prev_x, prev_y, self.x, self.y)
-        if moved_dist <= 0:
+        move_dist = self._distance(prev_x, prev_y, self.x, self.y)
+        if move_dist <= 1e-9:
             return G1(self.x, self.y, None, None)
         # v.rho = move distance
         # slic3r extrusion formula (___) shaped
-        e_length = moved_dist * (
+        e_length = move_dist * (
             math.pi * (self.layer_height / 2) ** 2
             + (self.line_width - self.layer_height) * self.layer_height
         )
@@ -157,6 +157,10 @@ class KeyboardControl:
     def _vertical_move(self) -> G1:
         self.z += self.layer_height
         return G1(self.x, self.y, self.z, None)
+
+    def _queue_ahead_time(self) -> float:
+        now = self.reactor.monotonic()
+        return self.toolhead.get_last_move_time() - self.mcu.estimated_print_time(now)
 
     def _stop_etch(self):
         self.running = False
@@ -171,8 +175,6 @@ class KeyboardControl:
             pass
         self.screen = None
         self.clock = None
-        self.queue_time = 0.0
-        self.last_eventtime = None
 
     def _read_keys(self) -> str:
         if self.mock_input:
@@ -216,13 +218,6 @@ class KeyboardControl:
             self._stop_etch()
             return self.reactor.NEVER
 
-        if self.last_eventtime is None:
-            dt = 0.0
-        else:
-            dt = max(0.0, eventtime - self.last_eventtime)
-        self.last_eventtime = eventtime
-        self.queue_time = max(0.0, self.queue_time - dt)
-
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 # stopped by closing Pygame window
@@ -240,24 +235,21 @@ class KeyboardControl:
             self._stop_etch()
             return self.reactor.NEVER
 
+        if self._queue_ahead_time() > self.max_queue_time:
+            self.frame_count += 1
+            return eventtime + (1.0 / self.framerate)
+
         if ' ' in keys_pressed:
             if not self.space_pressed:
                 self.space_pressed = True
                 vert_move = self._vertical_move()
-                # keys_pressed = keys_pressed.replace(' ', '')
-                self.gcode.run_script_from_command(self._G1_gcode(vert_move))
-                self.queue_time += (1.0 / self.framerate)
+                self.toolhead.manual_move([None, None, vert_move.z], self.speed)
         else:
             self.space_pressed = False
 
-        segment_time = 1.0 / self.framerate
-        has_lateral_input = any(k in keys_pressed for k in 'wasd')
-        while has_lateral_input and self.queue_time < self.lookahead:
-            lat_move = self._lateral_move(keys_pressed, segment_time)
-            if lat_move.e is None or lat_move.e <= 0:
-                break
-            self.gcode.run_script_from_command(self._G1_gcode(lat_move))
-            self.queue_time += segment_time
+        lat_move = self._lateral_move(keys_pressed)
+        if lat_move.e is not None and lat_move.e > 0:
+            self.toolhead.manual_move([lat_move.x, lat_move.y, None], self.speed)
 
         self.frame_count += 1
         return eventtime + (1.0 / self.framerate)
@@ -275,11 +267,9 @@ class KeyboardControl:
             gcmd.respond_info("Started etching!")
 
         self.gcode.run_script_from_command(startup_gcode)
-        self.gcode.run_script_from_command(f"G1 F{self.speed * 60.0:.1f}")
-        center = self._G1_gcode(G1(self.x, self.y, None, None))
-        down = self._G1_gcode(G1(None, None, self.z, None))
-        self.gcode.run_script_from_command(center)
-        self.gcode.run_script_from_command(down)
+        self.gcode.run_script_from_command(f"G1 f{self.speed*60}")
+        self.toolhead.manual_move([self.x, self.y, None], self.speed)
+        self.toolhead.manual_move([None, None, self.z], self.speed)
 
         gcmd.respond_info("Starting pygame init")
         # gcmd.respond_info(f"Host={socket.gethostname()} PID={os.getpid()}")
@@ -306,8 +296,6 @@ class KeyboardControl:
         self.frame_count = 0
         self.max_frames = len(self.test_keys) if self.mock_input else math.inf
         self.running = True
-        self.queue_time = 0.0
-        self.last_eventtime = None
         if self.etch_timer is not None:
             self.reactor.update_timer(self.etch_timer, self.reactor.NOW)
 
