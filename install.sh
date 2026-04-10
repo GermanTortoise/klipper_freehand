@@ -4,15 +4,6 @@ KLIPPER_PATH="${HOME}/klipper"
 KLIPPER_ENV="${HOME}/klippy-env"
 SRCDIR="$(cd "$(dirname "$0")" && pwd)"
 
-update_repository() {
-    if [ -d "${SRCDIR}/.git" ] && command -v git >/dev/null 2>&1; then
-        echo "Pulling latest changes from repository..."
-        if ! git -C "${SRCDIR}" pull --ff-only; then
-            echo "WARNING: Could not fast-forward local repository. Continuing with current files."
-        fi
-    fi
-}
-
 preflight_checks() {
     if [ "$EUID" -eq 0 ]; then
         echo "This script must not run as root"
@@ -46,7 +37,6 @@ restart_klipper() {
 }
 
 echo "Installing klipper_freehand..."
-update_repository
 preflight_checks
 check_klipper
 link_extension
